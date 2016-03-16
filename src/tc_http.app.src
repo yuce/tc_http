@@ -1,0 +1,15 @@
+{application, tc_http,
+ [{description, "HTTP handler for teacup."},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    teacup
+   ]},
+  {env,[]},
+  {modules, []},
+  {maintainers, ["Yuce Tekol"]},
+  {licenses, ["MIT"]},
+  {links, [{git, "https://github.com/yuce/tc_http.git"}]}
+ ]}.
