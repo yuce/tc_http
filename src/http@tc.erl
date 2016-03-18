@@ -112,7 +112,7 @@ notify_parent(#{parent@ := Parent,
                 ref@ := Ref,
                 response := Response}) ->
     Res = make_response(Response),
-    Parent ! {teacup@http, teacup:ref(Ref), Res}.
+    Parent ! {http@tc, teacup:ref(Ref), Res}.
     
 make_response(#{line := {Http, StatusCode, StatusMsg},
                 headers := Headers,
