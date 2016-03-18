@@ -31,19 +31,28 @@
 -module(http@tc).
 -behaviour(teacup_server).
 
--export([get/2]).
+-export([new/0,
+         get/2,
+         get/3]).
 -export([teacup@init/1,
          teacup@data/2,
          teacup@cast/2,
          teacup@status/2]).
 -export([safe_parse/3]).         
 
+-define(MSG, ?MODULE).
 -define(NL, "\r\n").
 
 %% == API
 
+new() ->
+    teacup:new(?MODULE).
+
 get(Conn, Url) ->
-    teacup:gen_cast(Conn, {get, Url}).
+    teacup:cast(Conn, {get, Url}).
+
+get(Conn, Url, Opts) ->
+    teacup:cast(Conn, {get, Url, Opts}).
 
 %% == Callbacks         
 
@@ -51,10 +60,16 @@ teacup@init(Opts) ->
     NewOpts = reset_response(Opts),
     {ok, NewOpts}.
     
-teacup@status(Status, State) ->
-    io:format("teacup@status: ~p~n", [Status]),
+teacup@status(Status, #{parent@ := Parent,
+                        ref@ := Ref} = State) ->
+    Parent ! {?MSG, teacup:ref(Ref), {teacup@status, Status}},
     {ok, State}.
-        
+    
+teacup@error(Reason, #{parent@ := Parent,
+                        ref@ := Ref} = State) ->
+    Parent ! {?MSG, teacup:ref(Ref), {teacup@error, Reason}},
+    {ok, State}.
+
 teacup@data(Data, #{response := #{line := Line,
                                   headers := Headers,
                                   body := Body,
@@ -76,13 +91,17 @@ teacup@data(Data, #{response := #{line := Line,
             {ok, NewState}
     end.
     
-teacup@cast({get, Url}, #{socket@ := Socket} = State) ->
+teacup@cast({get, Url}, State) ->
+    teacup@cast({get, Url, #{headers => #{}}}, State);
+
+teacup@cast({get, Url, #{headers := Headers}},
+            #{socket@ := Socket} = State) ->    
     EncodedUrl = urlencode(Url),
     RequestLine = make_request_line({get, EncodedUrl}, State),
-    Headers =  make_headers(State),
-    RequestData = [RequestLine, Headers, <<?NL>>],
+    BinHeaders =  make_headers(Headers, State),
+    RequestData = [RequestLine, BinHeaders, <<?NL>>],
     ok = gen_tcp:send(Socket, RequestData),
-    {noreply, State}.
+    {noreply, State}.    
 
 %% == Internal
 
@@ -101,9 +120,12 @@ make_request_line({get, Url}, State) ->
 make_request_line(Method, Url, _State) ->
     [Method, <<" ">>, Url, <<" ">>, <<"HTTP/1.1">>, <<?NL>>].                             
 
-make_headers(#{connect := #{host := Host}} = _State) ->
-    Headers = [header(<<"Host">>, list_to_binary(Host))],
-    Headers.
+make_headers(GivenHeaders, State) ->
+    Headers = maps:to_list(maps:merge(default_headers(State), GivenHeaders)),
+    lists:map(fun({K, V}) -> header(K, V) end, Headers).
+
+default_headers(#{connect := #{host := Host}}) ->
+    #{<<"host">> => Host}.
     
 header(Name, Value) ->
     [Name, <<": ">>, Value, <<?NL>>].    
@@ -247,5 +269,32 @@ content_length_2_test() ->
                 {<<"connection">>,<<"keep-alive">>},
                 {<<"vary">>,<<"Accept-Encoding">>}],
     ?assertEqual(-1, content_length(Headers)).                
+
+headers_1_test() ->
+    State = #{connect => #{host => <<"github.com">>}},
+    R = make_headers(#{}, State),
+    E = [[<<"host">>, <<": ">>, <<"github.com">>, <<?NL>>]],
+    ?assertEqual(E, R).
+
+headers_2_test() ->
+    State = #{connect => #{host => <<"github.com">>}},
+    R = make_headers(#{<<"host">> => <<"bitbucket.com">>,
+                       <<"content-type">> => <<"application/json">>}, State),
+    E = [[<<"content-type">>, <<": ">>, <<"application/json">>, <<?NL>>],
+         [<<"host">>, <<": ">>, <<"bitbucket.com">>, <<?NL>>]],
+    ?assertEqual(E, R).
+    
+get_1_test() ->
+    ok = application:start(teacup),
+    {ok, C} = http@tc:new(),
+    teacup:connect(C, <<"httpbin.org">>, 80),
+    http@tc:get(C, <<"/headers">>),
+    receive
+        {http@tc, C, _Response} ->
+            ok
+    after 1000 ->
+        ?assertEqual(true, false)
+    end,
+    ok = application:stop(teacup).
 
 -endif.
