@@ -28,7 +28,7 @@
 % (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 % OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
--module(tc_http).
+-module(http@tc).
 -behaviour(teacup_server).
 
 -export([get/2]).
