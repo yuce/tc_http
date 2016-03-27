@@ -28,31 +28,18 @@
 % (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 % OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
--module(http@tc).
+-module(http@teacup).
 -behaviour(teacup_server).
 
--export([new/0,
-         get/2,
-         get/3]).
 -export([teacup@init/1,
          teacup@data/2,
          teacup@cast/2,
-         teacup@status/2]).
+         teacup@status/2,
+         teacup@error/2]).
 -export([safe_parse/3]).         
 
 -define(MSG, ?MODULE).
 -define(NL, "\r\n").
-
-%% == API
-
-new() ->
-    teacup:new(?MODULE).
-
-get(Conn, Url) ->
-    teacup:cast(Conn, {get, Url}).
-
-get(Conn, Url, Opts) ->
-    teacup:cast(Conn, {get, Url, Opts}).
 
 %% == Callbacks         
 
@@ -62,13 +49,13 @@ teacup@init(Opts) ->
     
 teacup@status(Status, #{parent@ := Parent,
                         ref@ := Ref} = State) ->
-    Parent ! {?MSG, teacup:ref(Ref), {teacup@status, Status}},
-    {ok, State}.
+    Parent ! {?MSG, Ref, {teacup@status, Status}},
+    {noreply, State}.
     
 teacup@error(Reason, #{parent@ := Parent,
                         ref@ := Ref} = State) ->
-    Parent ! {?MSG, teacup:ref(Ref), {teacup@error, Reason}},
-    {ok, State}.
+    Parent ! {?MSG, Ref, {teacup@error, Reason}},
+    {noreply, State}.
 
 teacup@data(Data, #{response := #{line := Line,
                                   headers := Headers,
@@ -86,21 +73,21 @@ teacup@data(Data, #{response := #{line := Line,
         true ->
             % Clear the response once the parent is notified
             notify_parent(NewState),
-            {ok, reset_response(NewState)};
+            {onoreplyk, reset_response(NewState)};
         false ->
-            {ok, NewState}
+            {noreply, NewState}
     end.
     
 teacup@cast({get, Url}, State) ->
     teacup@cast({get, Url, #{headers => #{}}}, State);
 
 teacup@cast({get, Url, #{headers := Headers}},
-            #{socket@ := Socket} = State) ->    
+            #{ref@ := Ref} = State) ->    
     EncodedUrl = urlencode(Url),
     RequestLine = make_request_line({get, EncodedUrl}, State),
     BinHeaders =  make_headers(Headers, State),
     RequestData = [RequestLine, BinHeaders, <<?NL>>],
-    ok = gen_tcp:send(Socket, RequestData),
+    ok = teacup:send(Ref, RequestData),
     {noreply, State}.    
 
 %% == Internal
@@ -124,7 +111,7 @@ make_headers(GivenHeaders, State) ->
     Headers = maps:to_list(maps:merge(default_headers(State), GivenHeaders)),
     lists:map(fun({K, V}) -> header(K, V) end, Headers).
 
-default_headers(#{connect := #{host := Host}}) ->
+default_headers(#{transport := #{host := Host}}) ->
     #{<<"host">> => Host}.
     
 header(Name, Value) ->
@@ -134,7 +121,7 @@ notify_parent(#{parent@ := Parent,
                 ref@ := Ref,
                 response := Response}) ->
     Res = make_response(Response),
-    Parent ! {http@tc, teacup:ref(Ref), Res}.
+    Parent ! {http@teacup, Ref, Res}.
     
 make_response(#{line := {Http, StatusCode, StatusMsg},
                 headers := Headers,
@@ -271,30 +258,17 @@ content_length_2_test() ->
     ?assertEqual(-1, content_length(Headers)).                
 
 headers_1_test() ->
-    State = #{connect => #{host => <<"github.com">>}},
+    State = #{transport => #{host => <<"github.com">>}},
     R = make_headers(#{}, State),
     E = [[<<"host">>, <<": ">>, <<"github.com">>, <<?NL>>]],
     ?assertEqual(E, R).
 
 headers_2_test() ->
-    State = #{connect => #{host => <<"github.com">>}},
+    State = #{transport => #{host => <<"github.com">>}},
     R = make_headers(#{<<"host">> => <<"bitbucket.com">>,
                        <<"content-type">> => <<"application/json">>}, State),
     E = [[<<"content-type">>, <<": ">>, <<"application/json">>, <<?NL>>],
          [<<"host">>, <<": ">>, <<"bitbucket.com">>, <<?NL>>]],
     ?assertEqual(E, R).
     
-get_1_test() ->
-    ok = application:start(teacup),
-    {ok, C} = http@tc:new(),
-    teacup:connect(C, <<"httpbin.org">>, 80),
-    http@tc:get(C, <<"/headers">>),
-    receive
-        {http@tc, C, _Response} ->
-            ok
-    after 1000 ->
-        ?assertEqual(true, false)
-    end,
-    ok = application:stop(teacup).
-
 -endif.
