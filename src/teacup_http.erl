@@ -24,17 +24,30 @@ get(Conn, Url, Opts) ->
 
 %% == Internal
 
-teacup_opts(_) ->
-    #{transport => #{tls => false}}.
+teacup_opts(Opts) ->
+    Tls = maps:get(tls, Opts, false),
+    #{transport => #{tls => Tls}}.
 
 %% == Tests
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-get_1_test() ->
+get_http_1_test() ->
     ok = application:start(teacup),
     {ok, C} = teacup_http:connect(<<"httpbin.org">>, 80),
+    teacup_http:get(C, <<"/headers">>),
+    receive
+        {http@teacup, C, _Response} ->
+            ok
+    after 1000 ->
+        ?assertEqual(true, false)
+    end,
+    ok = application:stop(teacup).
+
+get_https_1_test() ->
+    ok = application:start(teacup),
+    {ok, C} = teacup_http:connect(<<"httpbin.org">>, 443, #{tls => true}),
     teacup_http:get(C, <<"/headers">>),
     receive
         {http@teacup, C, _Response} ->
