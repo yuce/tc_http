@@ -38,7 +38,7 @@ get_http_1_test() ->
     {ok, C} = teacup_http:connect(<<"httpbin.org">>, 80),
     teacup_http:get(C, <<"/headers">>),
     receive
-        {http@teacup, C, _Response} ->
+        {http@teacup, C, {response, _Response}} ->
             ok
     after 1000 ->
         ?assertEqual(true, false)
@@ -47,10 +47,10 @@ get_http_1_test() ->
 
 get_https_1_test() ->
     ok = application:start(teacup),
-    {ok, C} = teacup_http:connect(<<"httpbin.org">>, 443, #{tls => true}),
+    {ok, C} = teacup_http:connect(<<"httpbin.org">>, 443, #{transport => #{tls => true}}),
     teacup_http:get(C, <<"/headers">>),
     receive
-        {http@teacup, C, _Response} ->
+        {http@teacup, C, {response, _Response}} ->
             ok
     after 1000 ->
         ?assertEqual(true, false)

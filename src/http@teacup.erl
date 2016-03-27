@@ -47,14 +47,12 @@ teacup@init(Opts) ->
     NewOpts = reset_response(Opts),
     {ok, NewOpts}.
     
-teacup@status(Status, #{parent@ := Parent,
-                        ref@ := Ref} = State) ->
-    Parent ! {?MSG, Ref, {teacup@status, Status}},
+teacup@status(Status, State) ->
+    notify_parent({status, Status}, State),
     {noreply, State}.
     
-teacup@error(Reason, #{parent@ := Parent,
-                        ref@ := Ref} = State) ->
-    Parent ! {?MSG, Ref, {teacup@error, Reason}},
+teacup@error(Reason, State) ->
+    notify_parent({error, Reason}, State),
     {noreply, State}.
 
 teacup@data(Data, #{response := #{line := Line,
@@ -68,14 +66,13 @@ teacup@data(Data, #{response := #{line := Line,
                             headers := NewHeaders,
                             body := NewBody,
                             rest := NewRest},
-    NewState = State#{response := NewResponse},
     case Complete of
         true ->
+            notify_parent({response, make_response(NewResponse)}, State),
             % Clear the response once the parent is notified
-            notify_parent(NewState),
-            {noreply, reset_response(NewState)};
+            {noreply, reset_response(State)};
         false ->
-            {noreply, NewState}
+            {noreply, State#{response := NewResponse}}
     end.
     
 teacup@cast({get, Url}, State) ->
@@ -117,11 +114,9 @@ default_headers(#{transport := #{host := Host}}) ->
 header(Name, Value) ->
     [Name, <<": ">>, Value, <<?NL>>].    
 
-notify_parent(#{parent@ := Parent,
-                ref@ := Ref,
-                response := Response}) ->
-    Res = make_response(Response),
-    Parent ! {http@teacup, Ref, Res}.
+notify_parent(What, #{parent@ := Parent,
+                      ref@ := Ref}) ->
+    Parent ! {http@teacup, Ref, What}.
     
 make_response(#{line := {Http, StatusCode, StatusMsg},
                 headers := Headers,
