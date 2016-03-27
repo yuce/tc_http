@@ -1,4 +1,4 @@
--module(teacup_http).
+-module(teacup_https).
 
 -export([connect/2,
          connect/3,
@@ -25,7 +25,7 @@ get(Conn, Url, Opts) ->
 %% == Internal
 
 teacup_opts(_) ->
-    #{transport => #{tls => false}}.
+    #{transport => #{tls => true}}.
 
 %% == Tests
 
@@ -34,8 +34,8 @@ teacup_opts(_) ->
 
 get_1_test() ->
     ok = application:start(teacup),
-    {ok, C} = teacup_http:connect(<<"httpbin.org">>, 80),
-    teacup_http:get(C, <<"/headers">>),
+    {ok, C} = teacup_https:connect(<<"httpbin.org">>, 443),
+    teacup_https:get(C, <<"/headers">>),
     receive
         {http@teacup, C, _Response} ->
             ok

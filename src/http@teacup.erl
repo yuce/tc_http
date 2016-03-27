@@ -73,7 +73,7 @@ teacup@data(Data, #{response := #{line := Line,
         true ->
             % Clear the response once the parent is notified
             notify_parent(NewState),
-            {onoreplyk, reset_response(NewState)};
+            {noreply, reset_response(NewState)};
         false ->
             {noreply, NewState}
     end.
