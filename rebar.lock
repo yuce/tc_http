@@ -1,9 +1,6 @@
 [{<<"cowlib">>,{pkg,<<"cowlib">>,<<"1.3.0">>},0},
- {<<"simpre">>,
-  {git,"https://github.com/yuce/simpre",
-       {ref,"c8f48772b68f38a64df0a4a6d55b3a9c36891cf0"}},
-  1},
+ {<<"simpre">>,{pkg,<<"simpre">>,<<"0.1.0">>},1},
  {<<"teacup">>,
   {git,"https://github.com/yuce/teacup.git",
-       {ref,"dcbe7c443acdca277b3eacf23f86d84decbaee63"}},
+       {ref,"6b997aa991cd4b53cb8a02aa5465b519eab0ab1c"}},
   0}].
