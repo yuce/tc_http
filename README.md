@@ -1,4 +1,4 @@
-# tc_http
+# teacup_http
 
 HTTP handler for teacup.
 
