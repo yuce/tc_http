@@ -33,6 +33,7 @@
 
 -export([teacup@init/1,
          teacup@data/2,
+         teacup@call/3,
          teacup@cast/2,
          teacup@status/2,
          teacup@error/2]).
@@ -44,21 +45,27 @@
 %% == Callbacks         
 
 teacup@init(Opts) ->
-    NewOpts = reset_response(Opts),
+    Opts1 = reset_response(Opts),
+    NewOpts = Opts1#{from => undefined},
     {ok, NewOpts}.
     
 teacup@status(Status, State) ->
     notify_parent({status, Status}, State),
     {noreply, State}.
-    
-teacup@error(Reason, State) ->
+
+teacup@error(Reason, #{from := undefined} = State) ->
     notify_parent({error, Reason}, State),
-    {noreply, State}.
+    {noreply, State};
+
+teacup@error(Reason, #{from := From} = State) ->
+    gen_server:reply(From, {error, Reason}),
+    {noreply, State#{from => undefined}}.
 
 teacup@data(Data, #{response := #{line := Line,
                                   headers := Headers,
                                   body := Body,
-                                  rest := Rest} = Response} = State) ->
+                                  rest := Rest} = Response,
+                    from := From} = State) ->
     NewData = <<Rest/binary, Data/binary>>,
     {Complete, NewLine, {NewHeaders, NewBody}, NewRest} =
         safe_parse(NewData, Line, {Headers, Body}), 
@@ -68,22 +75,35 @@ teacup@data(Data, #{response := #{line := Line,
                             rest := NewRest},
     case Complete of
         true ->
-            notify_parent({response, make_response(NewResponse)}, State),
-            % Clear the response once the parent is notified
-            {noreply, reset_response(State)};
+            MadeResponse = make_response(NewResponse),
+            case From of
+                undefined ->
+                    notify_parent({response, MadeResponse}, State),
+                    % Clear the response once the parent is notified
+                    {noreply, reset_response(State)};
+                _ ->
+                    gen_server:reply(From, {ok, MadeResponse}),
+                    {noreply, reset_response(State#{from => undefined})}
+            end;                    
         false ->
             {noreply, State#{response := NewResponse}}
     end.
+
+teacup@call({get, Path}, From, State) ->
+    teacup@call({get, Path, #{headers => #{}}}, From, State);
+
+teacup@call({get, Path, #{headers :=Headers}}, From,
+            #{ref@ := Ref} = State) ->
+    RequestData = make_request(get, Path, Headers, State),
+    ok = teacup:send(Ref, RequestData),
+    {noreply, State#{from => From}}.
     
 teacup@cast({get, Url}, State) ->
     teacup@cast({get, Url, #{headers => #{}}}, State);
 
-teacup@cast({get, Url, #{headers := Headers}},
+teacup@cast({get, Path, #{headers := Headers}},
             #{ref@ := Ref} = State) ->    
-    EncodedUrl = urlencode(Url),
-    RequestLine = make_request_line({get, EncodedUrl}, State),
-    BinHeaders =  make_headers(Headers, State),
-    RequestData = [RequestLine, BinHeaders, <<?NL>>],
+    RequestData = make_request(get, Path, Headers, State),
     ok = teacup:send(Ref, RequestData),
     {noreply, State}.    
 
@@ -96,10 +116,24 @@ reset_response(State) ->
                          rest => <<>>,
                          content_length => -1}}.
 
-urlencode(Url) -> Url.
+make_request(Method, Path, Headers, State) ->
+    EncodedUrl = binary_to_list(Path),
+    RequestLine = make_request_line({Method, EncodedUrl}, State),
+    BinHeaders =  make_headers(Headers, State),
+    Body = make_body(Method, State),
+    [RequestLine, BinHeaders, Body, <<?NL>>].    
     
 make_request_line({get, Url}, State) ->
-    make_request_line(<<"GET">>, Url, State).
+    make_request_line(<<"GET">>, Url, State);
+
+make_request_line({post, Url}, State) ->
+    make_request_line(<<"POST">>, Url, State);
+
+make_request_line({put, Url}, State) ->
+    make_request_line(<<"PUT">>, Url, State);
+
+make_request_line({delete, Url}, State) ->
+    make_request_line(<<"DELETE">>, Url, State).
     
 make_request_line(Method, Url, _State) ->
     [Method, <<" ">>, Url, <<" ">>, <<"HTTP/1.1">>, <<?NL>>].                             
@@ -107,6 +141,8 @@ make_request_line(Method, Url, _State) ->
 make_headers(GivenHeaders, State) ->
     Headers = maps:to_list(maps:merge(default_headers(State), GivenHeaders)),
     lists:map(fun({K, V}) -> header(K, V) end, Headers).
+
+make_body(get, _) -> <<>>.
 
 default_headers(#{transport := #{host := Host}}) ->
     #{<<"host">> => Host}.
