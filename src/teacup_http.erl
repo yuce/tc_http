@@ -33,7 +33,9 @@ get_sync(Conn, Path, Opts) ->
 
 teacup_opts(Opts) ->
     Tls = maps:get(tls, Opts, false),
-    #{transport => #{tls => Tls}}.
+    Headers = maps:get(headers, Opts, #{}),
+    #{transport => #{tls => Tls},
+      headers => Headers}.
 
 %% == Tests
 
